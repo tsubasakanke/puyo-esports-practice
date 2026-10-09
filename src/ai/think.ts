@@ -88,6 +88,24 @@ export function simulate(field: Field, pair: [Color, Color], pl: Placement): Sim
   return { field: f, chain, score, dead: f.get(3, 12) !== EMPTY };
 }
 
+/** (x, y) にある色ぷよとつながっている個数（1..12 段、4 で打ち切り） */
+function connectedAtLeast4(f: Field, x: number, y: number): boolean {
+  const c = f.get(x, y);
+  const seen = new Set<number>([y * 8 + x]);
+  const stack: [number, number][] = [[x, y]];
+  let n = 0;
+  while (stack.length) {
+    const [cx, cy] = stack.pop()!;
+    if (++n >= 4) return true;
+    for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]] as const) {
+      if (nx < 1 || nx > COLS || ny < 1 || ny > 12 || seen.has(ny * 8 + nx) || f.get(nx, ny) !== c) continue;
+      seen.add(ny * 8 + nx);
+      stack.push([nx, ny]);
+    }
+  }
+  return false;
+}
+
 /** どこかの列に同じ色を 1〜2 個足したら何連鎖起きるかの最大 */
 export function potential(field: Field): number {
   let best = 0;
@@ -104,6 +122,8 @@ export function potential(field: Field): number {
       for (let n = 1; n <= 2 && h + n <= 12; n++) {
         const f = field.clone();
         for (let k = 1; k <= n; k++) f.set(x, h + k, c);
+        // 足したぷよが 4 個つながらなければ連鎖は起きない
+        if (!connectedAtLeast4(f, x, h + 1)) continue;
         const { chain } = runChain(f);
         if (chain > best) best = chain;
         if (chain > 0) break;
