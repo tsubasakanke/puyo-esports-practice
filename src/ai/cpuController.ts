@@ -36,26 +36,36 @@ export type Thinker = (req: ThinkRequest) => Promise<{ placement: Placement }> |
 /** その場で考える（テストと、Worker が使えないときの代わり） */
 export const syncThinker: Thinker = (req) => think(new Field(Uint8Array.from(req.cells)), req.pieces, req.params);
 
-/** Web Worker で考える。作れなければ syncThinker */
-export function workerThinker(): Thinker {
+const defaultWorker = () => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+
+/** Web Worker で考える。作れないか途中で落ちたら、その場で考える（syncThinker）に切り替える */
+export function workerThinker(make: () => Worker = defaultWorker): Thinker {
   let worker: Worker;
   try {
-    worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+    worker = make();
   } catch {
     return syncThinker;
   }
+  let broken = false;
   let nextId = 0;
-  const waiting = new Map<number, (r: { placement: Placement }) => void>();
+  const waiting = new Map<number, { req: ThinkRequest; resolve: (r: { placement: Placement }) => void }>();
   worker.onmessage = (e: MessageEvent<{ id: number; placement: Placement }>) => {
-    waiting.get(e.data.id)?.({ placement: e.data.placement });
+    waiting.get(e.data.id)?.resolve({ placement: e.data.placement });
     waiting.delete(e.data.id);
   };
-  return (req) =>
-    new Promise((resolve) => {
+  worker.onerror = () => {
+    broken = true;
+    for (const { req, resolve } of waiting.values()) resolve(syncThinker(req) as { placement: Placement });
+    waiting.clear();
+  };
+  return (req) => {
+    if (broken) return syncThinker(req);
+    return new Promise((resolve) => {
       const id = nextId++;
-      waiting.set(id, resolve);
+      waiting.set(id, { req, resolve });
       worker.postMessage({ id, ...req });
     });
+  };
 }
 
 const idle = (): FrameInput => ({ left: false, right: false, down: false, rotL: false, rotR: false });
@@ -81,7 +91,15 @@ export class CpuController {
     const req: ThinkRequest = {
       cells: Array.from(p.field.cells),
       pieces: [[cur.colors[0], cur.colors[1]], p.next(1), p.next(2)],
-      params: { depth: L.depth, beam: L.beam, targetChain: L.targetChain, pending: p.pendingTotal(), enemyPending: enemy.pendingTotal() },
+      params: {
+        depth: L.depth,
+        beam: L.beam,
+        targetChain: L.targetChain,
+        pending: p.pendingTotal(),
+        enemyPending: enemy.pendingTotal(),
+        enemyRoom: Math.max(0, 6 * (12 - enemy.field.height(3))),
+        rate: p.rate,
+      },
     };
     const field = p.field.clone();
     const accept = (r: { placement: Placement }) => {

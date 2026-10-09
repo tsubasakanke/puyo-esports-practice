@@ -55,7 +55,11 @@ export class Match {
     this.frame++;
     const rate = marginRate(this.players[0].rules.RATE, this.frame, this.players[0].rules);
     this.players.forEach((p, i) => {
-      if (!this.alive(i)) return;
+      if (!this.alive(i)) {
+        // 負けた人は進まないので、前のフレームのイベントを消しておく（毎フレーム処理し直さないため）
+        p.events = [];
+        return;
+      }
       p.rate = rate;
       p.step(inputs[i]);
     });

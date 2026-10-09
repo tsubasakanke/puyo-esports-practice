@@ -67,6 +67,15 @@ describe('Match', () => {
     expect(m.target(0)).toBe(2);
   });
 
+  it('負けたプレイヤーの古いイベントは次のフレームに残らない', () => {
+    const m = new Match({ players: 3, seed: 1 });
+    m.players[2].field = full3();
+    for (let i = 0; i < 200 && m.players[2].phase !== 'dead'; i++) m.step(inputs(3));
+    expect(m.players[2].events.some((e) => e.t === 'dead')).toBe(true);
+    m.step(inputs(3));
+    expect(m.players[2].events).toEqual([]);
+  });
+
   it('96秒でレートが 52 になる', () => {
     const m = new Match({ players: 2, seed: 1 });
     m.frame = 96 * 60 - 1;

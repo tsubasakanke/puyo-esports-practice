@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Player, type FrameInput } from '../../src/engine/player';
-import { CpuController, CPU_LEVELS, syncThinker } from '../../src/ai/cpuController';
+import { CpuController, CPU_LEVELS, syncThinker, workerThinker } from '../../src/ai/cpuController';
+import { Field } from '../../src/engine/field';
 
 function rng(seed: number) {
   let s = seed;
@@ -43,5 +44,25 @@ describe('CpuController', () => {
       expect(i.rotL && i.rotR).toBe(false);
       expect(i.left && i.right).toBe(false);
     }
+  });
+});
+
+describe('workerThinker', () => {
+  const req = { cells: Array.from(new Field().cells), pieces: [[1, 2], [3, 4]] as [number, number][], params: { depth: 1 as const, beam: 4, targetChain: 3, pending: 0, enemyPending: 0, enemyRoom: 72, rate: 70 } };
+  it('Worker が落ちたら、待っている依頼もこれからの依頼もその場で考える', async () => {
+    const fake: { onmessage: unknown; onerror: ((e: unknown) => void) | null; postMessage: () => void } = { onmessage: null, onerror: null, postMessage: () => {} };
+    const thinker = workerThinker(() => fake as unknown as Worker);
+    const pending = thinker(req as never);
+    fake.onerror!(new Event('error'));
+    const r1 = await pending;
+    expect(r1.placement).toBeDefined();
+    const r2 = await thinker(req as never);
+    expect(r2.placement).toBeDefined();
+  });
+  it('Worker を作れなければ最初からその場で考える', async () => {
+    const thinker = workerThinker(() => {
+      throw new Error('no worker');
+    });
+    expect((await thinker(req as never)).placement).toBeDefined();
   });
 });

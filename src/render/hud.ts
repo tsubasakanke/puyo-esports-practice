@@ -77,6 +77,12 @@ export class Hud extends Container {
     this.addChild(this.next, this.next2, this.score, bar, nameText);
   }
 
+  /** 新しいラウンド用に、連鎖表示とスコアを戻す */
+  reset() {
+    this.chainUntil = -1;
+    this.score.text = '00000000';
+  }
+
   setNext(a: [Color, Color], b: [Color, Color]) {
     this.next.set(a);
     this.next2.set(b);

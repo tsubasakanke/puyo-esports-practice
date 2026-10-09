@@ -19,6 +19,10 @@ export interface ThinkParams {
   pending: number;
   /** 相手の予告 */
   enemyPending: number;
+  /** 相手の窒息点が埋まるまでに入るおじゃまの数（だいたい 6 ×（12 − 3列目の高さ）） */
+  enemyRoom: number;
+  /** 今のおじゃまレート */
+  rate: number;
 }
 
 const SPAWN_X = 3, SPAWN_Y = 12;
@@ -168,9 +172,12 @@ interface Node {
 
 function fireValue(sim: SimResult, depth: number, params: ThinkParams, field: Field): number {
   if (sim.chain === 0) return 0;
+  const attack = sim.score / params.rate;
   const danger = field.height(3) >= 9 || params.pending >= 18;
-  const answers = params.pending >= 6 && sim.score / 70 >= params.pending * 0.6;
-  if (sim.chain >= params.targetChain || danger || answers) return 1_000_000 - depth * 100_000 + sim.chain * 5000 + sim.score / 10;
+  const answers = params.pending >= 6 && attack >= params.pending * 0.6;
+  // 相手の予告と合わせて相手が埋まるなら、小さい連鎖でもとどめに撃つ
+  const kills = attack - params.pending + params.enemyPending >= params.enemyRoom;
+  if (sim.chain >= params.targetChain || danger || answers || kills) return 1_000_000 - depth * 100_000 + sim.chain * 5000 + sim.score / 10;
   // 目標に届かない小さい連鎖は、材料がもったいないので少し減点
   return -sim.chain * 120;
 }

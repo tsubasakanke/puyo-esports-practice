@@ -3,7 +3,7 @@ import { Field } from '../../src/engine/field';
 import { reachablePlacements, simulate, potential, think, type ThinkParams } from '../../src/ai/think';
 import type { Color } from '../../src/engine/types';
 
-const P = (o: Partial<ThinkParams> = {}): ThinkParams => ({ depth: 1, beam: 8, targetChain: 1, pending: 0, enemyPending: 0, ...o });
+const P = (o: Partial<ThinkParams> = {}): ThinkParams => ({ depth: 1, beam: 8, targetChain: 1, pending: 0, enemyPending: 0, enemyRoom: 72, rate: 70, ...o });
 const empty = () => Field.fromStrings(Array(14).fill('......'));
 
 describe('reachablePlacements', () => {
@@ -57,6 +57,15 @@ describe('think', () => {
     const f = Field.fromStrings([...Array(8).fill('......'), 'G.....', 'G.....', 'G.....', 'R.....', 'R.....', 'R.....']);
     const r = think(f, [[1, 2], [3, 4]], P({ targetChain: 2 }));
     expect(simulate(f, [1, 2], r.placement).chain).toBe(2);
+  });
+  it('相手が埋まりかけていたら、目標に届かない小さい連鎖でもとどめに撃つ', () => {
+    const f = Field.fromStrings([...Array(8).fill('......'), 'G.....', 'G.....', 'G.....', 'R.....', 'R.....', 'R.....']);
+    // 2連鎖で 5 個。相手は予告 4 個＋あと 6 個で窒息
+    const r = think(f, [[1, 2], [3, 4]], P({ targetChain: 10, enemyPending: 4, enemyRoom: 6 }));
+    expect(simulate(f, [1, 2], r.placement).chain).toBe(2);
+    // 相手に余裕があるなら撃たない
+    const r2 = think(f, [[1, 2], [3, 4]], P({ targetChain: 10, enemyPending: 0, enemyRoom: 60 }));
+    expect(simulate(f, [1, 2], r2.placement).chain).toBeLessThan(2);
   });
   it('3列目が11段まで積まれていたら3列目には置かない', () => {
     const f = Field.fromStrings(['......', '......', '......', ...Array(11).fill('..O...')]);

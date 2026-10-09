@@ -118,10 +118,13 @@ export class VersusScreen implements Screen {
     this.match = new Match({ players: 2, seed, playerRules: [{ DAS: s.das, ARR: Math.max(2, s.arr) }] });
     this.cpu = new CpuController(this.level, this.app.cpuThinker(), Math.random);
     this.sides.forEach((side, i) => {
+      const p = this.match.players[i];
       side.view.reset();
-      side.view.update(this.match.players[i]);
+      side.view.update(p);
       side.label.visible = false;
       side.queue.set(0);
+      side.hud.reset();
+      side.hud.setNext(p.next(1), p.next(2));
     });
     this.phase = 'ready';
     this.timer = 0;
