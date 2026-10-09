@@ -29,7 +29,7 @@ export const TSU = {
   /** 設置が確定してから次の処理（ちぎり・消去判定）まで（Task 4 で実測に合わせて決める） */
   LOCK_ANIM_FRAMES: 0,
   /** 連鎖・ちぎりが終わってから次のツモが出るまで（Task 4 で実測に合わせて決める） */
-  NEXT_DELAY: 0,
+  NEXT_DELAY: 27,
 };
 
 export type Rules = typeof TSU;
