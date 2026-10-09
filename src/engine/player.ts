@@ -1,10 +1,11 @@
-import { Field, applyGravity, clearGroups, findGroups, type Group } from './field';
+import { Field, applyGravity, clearGroups, findGroups, type Drop, type Group } from './field';
 import { TSU, type Rules } from './rules/tsu';
 import { childPos, tryDrop, tryMove, tryRotate, type PieceState } from './piece';
-import { TsumoQueue } from './rng';
+import { Lcg, TsumoQueue } from './rng';
+import { dropColumns, garbageFallFrames } from './garbage';
 import { chainStepScore } from './score';
 import type { EngineEvent } from './events';
-import { type Color, EMPTY } from './types';
+import { type Color, EMPTY, GARBAGE } from './types';
 
 /** 1フレームの入力。left/right/down は押しっぱなしの状態、rotL/rotR は押した瞬間 */
 export interface FrameInput {
@@ -42,12 +43,19 @@ interface State {
   softDropScore: number;
   allClearPending: boolean;
   clearing: [number, number][];
+  rate: number;
+  leftover: number;
+  garbageReady: number;
+  garbageWaiting: Record<number, number>;
+  garbageRng: number;
 }
 
 export type PlayerSnapshot = State;
 
 export interface PlayerOptions {
   seed: number;
+  /** おじゃまが降る列を決める乱数のシード（省略時は seed から作る） */
+  garbageSeed?: number;
   colors?: 3 | 4 | 5;
   rules?: Partial<Rules>;
 }
@@ -72,8 +80,17 @@ export class Player {
   clearing: [number, number][] = [];
   /** 全消しのあと、次の連鎖でボーナスがつく */
   allClearPending = false;
-  /** ソフトドロップの得点（おじゃま計算に加える。② で使う） */
+  /** ソフトドロップの得点（次の連鎖の最初のリンクのおじゃま計算に加える） */
   softDropScore = 0;
+  /** おじゃまレート（Match がマージンタイムに合わせて毎フレーム設定する） */
+  rate: number;
+  /** おじゃま計算の端数（次の連鎖に持ち越す） */
+  private leftover = 0;
+  /** 確定した予告（次のツモの前に降る） */
+  private garbageReady = 0;
+  /** 未確定の予告（送り主ごと。送り主の連鎖が終わると確定する） */
+  private garbageWaiting: Record<number, number> = {};
+  private garbageRng: Lcg;
 
   private fallCounter = 0;
   private lockTimer = 0;
@@ -91,6 +108,49 @@ export class Player {
     this.rules = { ...TSU, ...opts.rules };
     this.tsumo = new TsumoQueue(opts.seed, opts.colors ?? 4);
     this.timer = this.rules.FIRST_SPAWN_EXTRA;
+    this.rate = this.rules.RATE;
+    this.garbageRng = new Lcg(opts.garbageSeed ?? (opts.seed * 0x9e37 + 0x1234) >>> 0);
+  }
+
+  /** 予告の合計（確定＋未確定） */
+  pendingTotal(): number {
+    return this.garbageReady + Object.values(this.garbageWaiting).reduce((a, b) => a + b, 0);
+  }
+
+  /** 確定した予告 */
+  pendingReady(): number {
+    return this.garbageReady;
+  }
+
+  /** from からのおじゃまを未確定として積む */
+  receive(from: number, n: number): void {
+    if (n <= 0) return;
+    this.garbageWaiting[from] = (this.garbageWaiting[from] ?? 0) + n;
+  }
+
+  /** from の連鎖が終わったので、from からのおじゃまを確定する */
+  confirm(from: number): void {
+    const n = this.garbageWaiting[from];
+    if (!n) return;
+    this.garbageReady += n;
+    delete this.garbageWaiting[from];
+  }
+
+  /** 自分の予告を n まで減らす（確定分から先に）。減らした数を返す */
+  private offset(n: number): number {
+    let left = n;
+    const fromReady = Math.min(left, this.garbageReady);
+    this.garbageReady -= fromReady;
+    left -= fromReady;
+    for (const k of Object.keys(this.garbageWaiting)) {
+      if (left <= 0) break;
+      const key = Number(k);
+      const used = Math.min(left, this.garbageWaiting[key]);
+      this.garbageWaiting[key] -= used;
+      left -= used;
+      if (this.garbageWaiting[key] === 0) delete this.garbageWaiting[key];
+    }
+    return n - left;
   }
 
   /** 操作中のツモが次の段へ落ちるまでの進み具合 0..1（描画のなめらかな落下用） */
@@ -152,6 +212,7 @@ export class Player {
     this.quickArmedAt = -1000;
     this.pendingDx = 0;
     this.chain = 0;
+    this.softDropScore = 0;
   }
 
   private control(input: FrameInput) {
@@ -260,7 +321,31 @@ export class Player {
     }
     this.phase = 'garbage';
     this.timer = this.rules.NEXT_DELAY;
+    if (this.garbageReady > 0) this.dropGarbage();
     if (this.timer <= 0) this.spawn();
+  }
+
+  /** 確定した予告を最大 30 個降らせる */
+  private dropGarbage() {
+    const r = this.rules;
+    const n = Math.min(this.garbageReady, r.MAX_GARBAGE_DROP);
+    this.garbageReady -= n;
+    const cols = dropColumns(n, this.garbageRng);
+    const heights = cols.map((_, i) => this.field.height(i + 1));
+    const drops: Drop[] = [];
+    cols.forEach((k, i) => {
+      const x = i + 1;
+      for (let j = 0; j < k; j++) {
+        const y = heights[i] + 1 + j;
+        // 14 段目より上には置けない（あふれた分はなくなる）
+        if (y > 13) break;
+        this.field.set(x, y, GARBAGE);
+        drops.push({ x, from: 14 + j + 1, to: y });
+      }
+    });
+    this.emit({ t: 'garbage', count: n, drops });
+    const fall = garbageFallFrames(cols, heights, r.GARBAGE_LAND_FRAMES, r.GARBAGE_LAND_PER_ROW);
+    this.timer = Math.max(this.timer, fall);
   }
 
   private pendingGroups: Group[] = [];
@@ -274,7 +359,19 @@ export class Player {
     const probe = this.field.clone();
     const garbage = clearGroups(probe, groups);
     this.clearing.push(...garbage);
-    this.emit({ t: 'clear', chain: this.chain, groups, garbage, score });
+    let total = score + this.leftover;
+    if (this.chain === 1) {
+      total += this.softDropScore;
+      this.softDropScore = 0;
+    }
+    let attack = Math.floor(total / this.rate);
+    this.leftover = total - attack * this.rate;
+    if (this.chain === 1 && this.allClearPending) {
+      attack += this.rules.ALL_CLEAR_BONUS;
+      this.allClearPending = false;
+    }
+    const send = attack - this.offset(attack);
+    this.emit({ t: 'clear', chain: this.chain, groups, garbage, score, attack, send });
     this.phase = 'clear';
     this.timer = this.rules.CLEAR_FRAMES;
   }
@@ -316,6 +413,11 @@ export class Player {
       softDropScore: this.softDropScore,
       allClearPending: this.allClearPending,
       clearing: this.clearing,
+      rate: this.rate,
+      leftover: this.leftover,
+      garbageReady: this.garbageReady,
+      garbageWaiting: this.garbageWaiting,
+      garbageRng: this.garbageRng.state,
       pendingGroups: this.pendingGroups,
     } as State & { pendingGroups: Group[] });
   }
@@ -344,6 +446,11 @@ export class Player {
     this.allClearPending = c.allClearPending;
     this.clearing = c.clearing;
     this.pendingGroups = c.pendingGroups ?? [];
+    this.rate = c.rate;
+    this.leftover = c.leftover;
+    this.garbageReady = c.garbageReady;
+    this.garbageWaiting = c.garbageWaiting;
+    this.garbageRng = new Lcg(c.garbageRng);
     this.events = [];
   }
 }
