@@ -90,6 +90,11 @@ export class Player {
     this.timer = this.rules.FIRST_SPAWN_EXTRA;
   }
 
+  /** 操作中のツモが次の段へ落ちるまでの進み具合 0..1（描画のなめらかな落下用） */
+  get fallProgress(): number {
+    return this.fallCounter / this.rules.GRAVITY_FRAMES;
+  }
+
   /** n 手先のツモ（1=NEXT, 2=NEXT2） */
   next(n: 1 | 2): [Color, Color] {
     return this.tsumo.get(this.tsumoIndex + n - 1);
