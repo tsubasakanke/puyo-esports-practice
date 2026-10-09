@@ -26,6 +26,21 @@ export const TSU = {
   /** 窒息点 */
   DEATH_X: [3] as number[],
   DEATH_Y: 12,
+  /** おじゃまレート（初期値） */
+  RATE: 70,
+  /** マージンタイムの開始と間隔（F） */
+  MARGIN_START_FRAMES: 96 * 60,
+  MARGIN_STEP_FRAMES: 16 * 60,
+  /** マージンタイムでレートが下がる回数の上限 */
+  MARGIN_MAX_STEPS: 14,
+  /** 1回に降るおじゃまの上限 */
+  MAX_GARBAGE_DROP: 30,
+  /** 全消しの次の連鎖に足すおじゃま */
+  ALL_CLEAR_BONUS: 30,
+  /** おじゃまが1段目に着地するまでのF（1〜6列目、実測） */
+  GARBAGE_LAND_FRAMES: [60, 59, 64, 56, 62, 58],
+  /** 積まれている段1つにつき着地が早くなるF（推測） */
+  GARBAGE_LAND_PER_ROW: 2,
   /** 設置が確定してから次の処理（ちぎり・消去判定）まで（Task 4 で実測に合わせて決める） */
   LOCK_ANIM_FRAMES: 0,
   /** 連鎖・ちぎりが終わってから次のツモが出るまで（Task 4 で実測に合わせて決める） */
