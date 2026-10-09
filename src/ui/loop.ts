@@ -8,7 +8,8 @@ export class FixedLoop {
   private last = 0;
   private acc = 0;
 
-  constructor(private step: () => void, private render: (alpha: number) => void) {}
+  /** maxSteps: 1 回の tick で進める最大フレーム数（オンラインではタブが隠れても追いつけるよう大きくする） */
+  constructor(private step: () => void, private render: (alpha: number) => void, private maxSteps = MAX_STEPS) {}
 
   reset(nowMs: number): void {
     this.last = nowMs;
@@ -19,7 +20,7 @@ export class FixedLoop {
     this.acc += nowMs - this.last;
     this.last = nowMs;
     let n = 0;
-    while (this.acc >= STEP_MS - EPS && n < MAX_STEPS) {
+    while (this.acc >= STEP_MS - EPS && n < this.maxSteps) {
       this.step();
       this.acc -= STEP_MS;
       n++;

@@ -47,3 +47,26 @@ export function versusSide(side: 0 | 1): SideLayout {
     garbage: { x: fx, y: fy - cell * 0.95 },
   };
 }
+
+/**
+ * 3〜4 人のときの配置。縦長のカードを横一列に並べる（設計書 §6.3）。
+ * 3 人のときは 4 人の並びから 1 枚抜いて中央に寄せる。
+ */
+export function cardLayout(i: number, n: number): SideLayout {
+  const cell = 48;
+  const fieldW = cell * 6;
+  const pitch = 470;
+  const cx = BASE_W / 2 + (i - (n - 1) / 2) * pitch;
+  const fx = cx - fieldW / 2 - 50;
+  const fy = 210;
+  const nextX = fx + fieldW + 30;
+  return {
+    cell,
+    field: { x: fx, y: fy },
+    next: { x: nextX, y: fy + 10 },
+    next2: { x: nextX + 8, y: fy + 10 + cell * 2.8 },
+    score: { x: cx - 30, y: fy + cell * 12 + 55 },
+    name: { x: cx - 30, y: fy + cell * 12 + 120 },
+    garbage: { x: fx, y: fy - cell * 0.95 },
+  };
+}

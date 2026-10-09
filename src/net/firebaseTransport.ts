@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously } from 'firebase/auth';
+import { browserSessionPersistence, getAuth, setPersistence, signInAnonymously } from 'firebase/auth';
 import {
   getDatabase, ref, get, set, update, push, onValue, onChildAdded, onDisconnect,
 } from 'firebase/database';
@@ -15,7 +15,11 @@ export function createFirebaseTransport(config: Record<string, string>): Transpo
 
   return {
     uid() {
-      uidPromise ??= signInAnonymously(auth).then(c => c.user.uid);
+      // ログインはタブごと（同じ PC の 2 タブでも別の人として遊べる。リロードしても同じ人のまま）
+      uidPromise ??= setPersistence(auth, browserSessionPersistence)
+        .catch(() => undefined)
+        .then(() => signInAnonymously(auth))
+        .then(c => c.user.uid);
       return uidPromise;
     },
     serverNow: () => Date.now() + offset,

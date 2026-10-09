@@ -8,6 +8,7 @@ import type { Color } from '../../engine/types';
 import { SoloScreen } from './solo';
 import { SettingsScreen } from './settings';
 import { CpuSetupScreen } from './cpuSetup';
+import { OnlineScreen } from './online';
 
 export class TitleScreen implements Screen {
   private app!: App;
@@ -59,7 +60,7 @@ export class TitleScreen implements Screen {
     this.menu = new Menu([
       { label: 'ひとり練習', onSelect: () => app.go(new SoloScreen()) },
       { label: 'CPU 対戦', onSelect: () => app.go(new CpuSetupScreen()) },
-      { label: 'オンライン対戦（じゅんび中）', disabled: true },
+      { label: 'オンライン対戦（最大4人）', onSelect: () => app.go(new OnlineScreen()) },
       { label: '設定', onSelect: () => app.go(new SettingsScreen()) },
     ]);
     this.menu.position.set(BASE_W / 2 - 280, 500);

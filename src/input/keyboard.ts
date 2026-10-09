@@ -8,6 +8,8 @@ export class Keyboard {
   private held = new Set<string>();
   private pressed = new Set<string>();
   private onDown = (e: KeyboardEvent) => {
+    // 文字入力欄に打っているときはゲームの操作にしない
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (this.isBound(e.code)) e.preventDefault();
     if (e.repeat) return;
     this.held.add(e.code);

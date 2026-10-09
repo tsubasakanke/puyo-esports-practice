@@ -19,3 +19,11 @@ it('大きく時間が飛んでも 30 フレームまでしか進めない', () 
   l.tick(10_000 + 1000 / 60);
   expect(steps).toBe(31);
 });
+
+it('maxSteps を大きくすると、そのぶん追いつける', () => {
+  let steps = 0;
+  const l = new FixedLoop(() => steps++, () => {}, 600);
+  l.reset(0);
+  l.tick(5000);
+  expect(steps).toBe(300);
+});

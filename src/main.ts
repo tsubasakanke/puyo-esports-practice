@@ -5,6 +5,7 @@ import { GarbageIcons } from './render/garbageIcons';
 import { GarbageQueueView } from './render/garbageQueue';
 import { App } from './ui/app';
 import { TitleScreen } from './ui/screens/title';
+import { OnlineScreen } from './ui/screens/online';
 
 async function main() {
   const host = document.getElementById('app')!;
@@ -37,7 +38,9 @@ async function main() {
     return;
   }
   const app = new App(pixi);
-  app.go(new TitleScreen());
+  // 招待リンク（#room=XXXXXXX）から来たら、オンラインの入口へ
+  const invited = /room=([A-Z0-9]{7})/.exec(location.hash)?.[1];
+  app.go(invited ? new OnlineScreen(invited) : new TitleScreen());
   (window as unknown as { __app: App }).__app = app;
 }
 
