@@ -84,3 +84,21 @@ it('14段目に回したぷよは設置後に消える', () => {
   for (let i = 0; i < 200 && !p.events.some((e) => e.t === 'lock'); i++) p.step({ ...idle, down: true });
   expect(p.field.get(2, 14)).toBe(0);
 });
+
+it('移動した次のフレームに押した反対方向のタップも、取りこぼさずに動く', () => {
+  const p = new Player({ seed: 3 });
+  for (let i = 0; i < 10; i++) p.step(idle);
+  p.step({ ...idle, left: true }); // x=2
+  p.step({ ...idle, right: true }); // 1F後に右タップ（移動の直後で受け付け待ち）
+  for (let i = 0; i < 3; i++) p.step(idle);
+  expect(p.piece!.x).toBe(3);
+});
+
+it('回転キーを両方同時に押しても1フレームに1回しか回らない', () => {
+  const p = new Player({ seed: 3 });
+  for (let i = 0; i < 10; i++) p.step(idle);
+  p.piece = { ...p.piece!, x: 6 };
+  p.step({ ...idle, rotL: true, rotR: true });
+  // 右回転だけが効いて、壁蹴りで5列目・右向きになる（そのあと左回転で戻ったりしない）
+  expect(p.piece).toMatchObject({ x: 5, dir: 1 });
+});

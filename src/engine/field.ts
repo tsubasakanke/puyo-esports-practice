@@ -124,9 +124,8 @@ export interface Drop {
   to: number;
 }
 
-/** 14段目を消してから、ぷよを下に詰める */
+/** ぷよを下に詰め、それでも 14 段目に残ったぷよを消す */
 export function applyGravity(f: Field): { maxDrop: number; drops: Drop[] } {
-  for (let x = 1; x <= COLS; x++) f.set(x, ROWS, EMPTY);
   let maxDrop = 0;
   const drops: Drop[] = [];
   for (let x = 1; x <= COLS; x++) {
@@ -143,5 +142,6 @@ export function applyGravity(f: Field): { maxDrop: number; drops: Drop[] } {
       to++;
     }
   }
+  for (let x = 1; x <= COLS; x++) f.set(x, ROWS, EMPTY);
   return { maxDrop, drops };
 }

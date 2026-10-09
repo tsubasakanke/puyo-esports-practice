@@ -38,6 +38,7 @@ interface State {
   prevL: boolean;
   prevR: boolean;
   quickArmedAt: number;
+  pendingDx: number;
   softDropScore: number;
   allClearPending: boolean;
   clearing: [number, number][];
@@ -83,6 +84,8 @@ export class Player {
   private prevL = false;
   private prevR = false;
   private quickArmedAt = -1000;
+  /** 移動直後の受け付け待ちのあいだに押されたタップ（待ちが終わったら動かす） */
+  private pendingDx = 0;
 
   constructor(opts: PlayerOptions) {
     this.rules = { ...TSU, ...opts.rules };
@@ -147,6 +150,7 @@ export class Player {
     this.floorKicks = 0;
     this.busyUntil = -1;
     this.quickArmedAt = -1000;
+    this.pendingDx = 0;
     this.chain = 0;
   }
 
@@ -154,22 +158,22 @@ export class Player {
     const r = this.rules;
     let p = this.piece!;
 
-    // 回転
-    for (const turn of [input.rotR ? 1 : 0, input.rotL ? -1 : 0] as const) {
-      if (!turn) continue;
+    // 回転（1 フレームに 1 回まで。両方押したら右回転を優先）
+    const turn = input.rotR ? 1 : input.rotL ? -1 : 0;
+    if (turn) {
       const armed = this.frame - this.quickArmedAt <= QUICK_TURN_WINDOW;
       const res = tryRotate(this.field, p, turn, armed);
       if (!res) {
         this.quickArmedAt = this.frame;
-        continue;
-      }
-      this.quickArmedAt = -1000;
-      p = res.piece;
-      this.emit({ t: 'rotate', quick: res.quickTurn });
-      if (res.floorKick && ++this.floorKicks >= r.MAX_FLOOR_KICKS) {
-        this.piece = p;
-        this.lock();
-        return;
+      } else {
+        this.quickArmedAt = -1000;
+        p = res.piece;
+        this.emit({ t: 'rotate', quick: res.quickTurn });
+        if (res.floorKick && ++this.floorKicks >= r.MAX_FLOOR_KICKS) {
+          this.piece = p;
+          this.lock();
+          return;
+        }
       }
     }
 
@@ -178,8 +182,16 @@ export class Player {
     this.holdL = input.left && !both ? this.holdL + 1 : 0;
     this.holdR = input.right && !both ? this.holdR + 1 : 0;
     const wants = (hold: number) => hold === 1 || (hold > r.DAS && (hold - 1 - r.DAS) % r.ARR === 0);
-    const dx = wants(this.holdL) ? -1 : wants(this.holdR) ? 1 : 0;
-    if (dx && this.frame > this.busyUntil) {
+    let dx = wants(this.holdL) ? -1 : wants(this.holdR) ? 1 : 0;
+    if (this.frame <= this.busyUntil) {
+      // 押した瞬間のタップは、受け付け待ちが終わるまで覚えておく
+      if (this.holdL === 1 || this.holdR === 1) this.pendingDx = dx;
+      dx = 0;
+    } else if (!dx && this.pendingDx) {
+      dx = this.pendingDx;
+    }
+    if (dx) {
+      this.pendingDx = 0;
       const moved = tryMove(this.field, p, dx);
       if (moved) {
         p = moved;
@@ -300,6 +312,7 @@ export class Player {
       prevL: this.prevL,
       prevR: this.prevR,
       quickArmedAt: this.quickArmedAt,
+      pendingDx: this.pendingDx,
       softDropScore: this.softDropScore,
       allClearPending: this.allClearPending,
       clearing: this.clearing,
@@ -326,6 +339,7 @@ export class Player {
     this.prevL = c.prevL;
     this.prevR = c.prevR;
     this.quickArmedAt = c.quickArmedAt;
+    this.pendingDx = c.pendingDx ?? 0;
     this.softDropScore = c.softDropScore;
     this.allClearPending = c.allClearPending;
     this.clearing = c.clearing;

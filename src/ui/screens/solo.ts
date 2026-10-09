@@ -7,7 +7,6 @@ import { makeBackground, makeFrame } from '../../render/background';
 import { FieldView } from '../../render/fieldView';
 import { FONT, Hud } from '../../render/hud';
 import { BASE_H, BASE_W, versusSide } from '../../render/layout';
-import { PuyoTextures } from '../../render/puyoTextures';
 import { Menu } from '../menu';
 import { TitleScreen } from './title';
 import { keyName } from './settings';
@@ -37,7 +36,7 @@ export class SoloScreen implements Screen {
   enter(app: App): void {
     this.app = app;
     const L = versusSide(0);
-    const tex = new PuyoTextures(L.cell * 2, app.settings.colorMarks);
+    const tex = app.textures(L.cell * 2, app.settings.colorMarks);
     app.root.addChild(makeBackground('tsu'));
     const frame = makeFrame(L.cell, 0);
     frame.position.set(L.field.x, L.field.y);
@@ -85,7 +84,7 @@ export class SoloScreen implements Screen {
   private restart(seed: number) {
     this.seed = seed;
     const s = this.app.settings;
-    this.player = new Player({ seed, colors: this.colors, rules: { DAS: s.das, ARR: s.arr } });
+    this.player = new Player({ seed, colors: this.colors, rules: { DAS: s.das, ARR: Math.max(2, s.arr) } });
     this.history.clear();
     this.maxChain = 0;
     this.view.reset();
@@ -122,7 +121,7 @@ export class SoloScreen implements Screen {
   }
 
   private undo() {
-    const s = this.history.undo(this.player.phase === 'dead');
+    const s = this.history.undoFor({ dead: this.player.phase === 'dead', hasPiece: this.player.piece !== null });
     if (!s) return;
     this.player.restore(s);
     this.view.reset();

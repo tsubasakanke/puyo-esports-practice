@@ -4,7 +4,6 @@ import { Menu } from '../menu';
 import { makeBackground } from '../../render/background';
 import { BASE_W } from '../../render/layout';
 import { FONT } from '../../render/hud';
-import { PuyoTextures } from '../../render/puyoTextures';
 import type { Color } from '../../engine/types';
 import { SoloScreen } from './solo';
 import { SettingsScreen } from './settings';
@@ -18,7 +17,7 @@ export class TitleScreen implements Screen {
     this.app = app;
     app.root.addChild(makeBackground('tsu'));
 
-    const tex = new PuyoTextures(128);
+    const tex = app.textures(120, false);
     for (let i = 0; i < 14; i++) {
       const c = ((i % 5) + 1) as Color;
       const g = new Container();

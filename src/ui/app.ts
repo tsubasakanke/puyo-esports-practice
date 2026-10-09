@@ -3,6 +3,7 @@ import { Keyboard } from '../input/keyboard';
 import { BASE_H, BASE_W, fitStage } from '../render/layout';
 import { loadSettings, saveSettings, type Settings } from '../settings';
 import { Sfx } from '../audio/sfx';
+import { PuyoTextures } from '../render/puyoTextures';
 
 export interface Screen {
   /** 画面に入るとき。root に表示物を足す */
@@ -38,6 +39,16 @@ export class App {
     pixi.renderer.on('resize', fit);
     fit();
     pixi.ticker.add(() => this.screen?.tick(performance.now()));
+  }
+
+  private textureCache = new Map<string, PuyoTextures>();
+
+  /** ぷよのテクスチャは作り直さずに使い回す（画面を切り替えるたびに作るとメモリが増え続けるため） */
+  textures(px: number, marks: boolean): PuyoTextures {
+    const key = `${px}:${marks}`;
+    let t = this.textureCache.get(key);
+    if (!t) this.textureCache.set(key, (t = new PuyoTextures(px, marks)));
+    return t;
   }
 
   get current(): Screen | null {

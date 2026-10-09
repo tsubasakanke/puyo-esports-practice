@@ -233,7 +233,7 @@ export class FieldView extends Container {
     let used = 0;
     const clearing = new Set(p.clearing.map(([x, y]) => this.key(x, y)));
     const clearT = now - this.clearStart;
-    if (clearing.size && Math.abs(clearT - FLASH_FRAMES) < 1 && alpha < 0.5 && !this.burstDone) {
+    if (clearing.size && this.frame - this.clearStart >= FLASH_FRAMES && !this.burstDone) {
       this.burstDone = true;
       for (const [x, y] of p.clearing) this.burst(this.px(x), this.py(y), p.field.get(x, y));
     }

@@ -47,7 +47,7 @@ export class SettingsScreen implements Screen {
     const items: MenuItem[] = [
       ...ACTIONS.map(([a]) => ({ label: '', onSelect: () => this.startBind(a) })),
       { label: '', onLeftRight: (d) => ((s.das = Math.max(1, Math.min(30, s.das + d))), this.save()) },
-      { label: '', onLeftRight: (d) => ((s.arr = Math.max(1, Math.min(10, s.arr + d))), this.save()) },
+      { label: '', onLeftRight: (d) => ((s.arr = Math.max(2, Math.min(10, s.arr + d))), this.save()) },
       { label: '', onLeftRight: (d) => ((s.volume = Math.round(Math.max(0, Math.min(1, s.volume + d * 0.1)) * 10) / 10), this.save()) },
       { label: '', onSelect: () => ((s.colorMarks = !s.colorMarks), this.save()), onLeftRight: () => ((s.colorMarks = !s.colorMarks), this.save()) },
       { label: '初期設定にもどす', onSelect: () => ((app.settings = structuredClone(DEFAULT_SETTINGS)), app.saveSettings(), app.go(new SettingsScreen())) },

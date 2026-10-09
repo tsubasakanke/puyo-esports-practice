@@ -42,3 +42,11 @@ it('Player と組み合わせて、1手戻すと盤面とツモ番号が戻る',
   expect(p.tsumoIndex).toBe(idx - 1);
   expect(p.phase).toBe('control');
 });
+
+it('ツモを置いたあと（連鎖中など操作中のツモがないとき）は、置いた手だけやり直す', () => {
+  const h = new PracticeHistory<number>();
+  h.push(1);
+  h.push(2);
+  expect(h.undoFor({ dead: false, hasPiece: false })).toBe(2);
+  expect(h.undoFor({ dead: false, hasPiece: true })).toBe(1);
+});
