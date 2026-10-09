@@ -14,6 +14,7 @@ it('ログを書いて読み戻せる', () => {
   expect(r.placement(1)).toEqual({ x: 6, y: 13, dir: 2, soft: 0 });
   expect(r.garbage(1)).toEqual([1, 0, 2, 0, 5, 0]);
   expect(r.placement(2)).toBeUndefined();
+  expect(r.pending).toBe(0);
   expect(r.garbage(2)).toBeUndefined();
 });
 
