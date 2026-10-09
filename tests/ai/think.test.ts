@@ -63,16 +63,20 @@ describe('think', () => {
     const r = think(f, [[1, 2], [3, 4]], P({ depth: 2 }));
     expect(r.placement.x === 3 || (r.placement.dir === 1 && r.placement.x === 2) || (r.placement.dir === 3 && r.placement.x === 4)).toBe(false);
   });
-  it('depth2・beam8 の思考は1手ぶんの時間に十分間に合う（中央値 150ms 以内。単体では約30ms）', () => {
+  it('depth2・beam8 の思考は、連鎖シミュレーション 2000 回ぶんの 5 倍以内（単体では約 30ms）', () => {
+    // 絶対時間だと並列テストの混み具合で揺れるので、同じ瞬間に測った基準の処理との比で見る
     const f = Field.fromStrings([...Array(8).fill('......'), 'GB....', 'GBY...', 'RYB...', 'RRBY..', 'GGYBB.', 'RRGYYB']);
     const pieces: [Color, Color][] = [[1, 2], [3, 4], [2, 2]];
-    const times: number[] = [];
+    const ratios: number[] = [];
     for (let i = 0; i < 5; i++) {
-      const t = performance.now();
+      let t = performance.now();
+      for (let k = 0; k < 2000; k++) simulate(f, [1, 2], { x: (k % 6) + 1, dir: 0 });
+      const base = performance.now() - t;
+      t = performance.now();
       think(f, pieces, P({ depth: 2, beam: 8, targetChain: 8 }));
-      times.push(performance.now() - t);
+      ratios.push((performance.now() - t) / base);
     }
-    times.sort((a, b) => a - b);
-    expect(times[2]).toBeLessThan(150);
+    ratios.sort((a, b) => a - b);
+    expect(ratios[2]).toBeLessThan(5);
   });
 });
