@@ -15,6 +15,8 @@ const bigText = (text: string, size: number, fill: string, stroke: string) =>
   new Text({ text, style: { fill, fontSize: size, fontWeight: '900', fontFamily: FONT, stroke: { color: stroke, width: size * 0.14, join: 'round' }, dropShadow: { color: '#000000', alpha: 0.5, blur: 6, distance: 6, angle: Math.PI / 2 } } });
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+/** ほかの人が書いた名前は信用しない（文字列にして 12 文字まで） */
+const nameOf = (v: unknown) => String((v as { name?: unknown } | undefined)?.name ?? 'プレイヤー').slice(0, 12);
 
 interface Side {
   index: number;
@@ -74,7 +76,7 @@ export class OnlineRoomScreen implements Screen {
   private sync() {
     const { info } = this.room.state;
     if (info.state === 'playing' && info.round !== this.round && info.members.includes(this.room.myId)) this.setupRound(info);
-    if (info.state === 'playing' && this.match) {
+    if (info.state === 'playing' && this.match && !this.room.hostGone) {
       this.hidePanel();
       this.checkRoundOver();
     } else {
@@ -103,7 +105,7 @@ export class OnlineRoomScreen implements Screen {
       frame.position.set(L.field.x, L.field.y);
       const view = new FieldView(tex, L.cell);
       view.position.set(L.field.x, L.field.y);
-      const name = (this.room.state.players[uid]?.name ?? 'プレイヤー') + (index === m.myIndex ? '（あなた）' : '');
+      const name = nameOf(this.room.state.players[uid]) + (index === m.myIndex ? '（あなた）' : '');
       const hud = new Hud(tex, L, slot, name);
       const queue = new GarbageQueueView(this.app.garbageIcons(), L.cell);
       queue.position.set(L.garbage.x, L.garbage.y);
@@ -131,9 +133,10 @@ export class OnlineRoomScreen implements Screen {
     }
   }
 
+  /** 決着がついたら WIN / ばたんきゅ〜 を出す（あとから同時負けが届いたら DRAW に直す） */
   private checkRoundOver() {
     const m = this.match;
-    if (!m || this.roundOver) return;
+    if (!m) return;
     const lost = this.room.state.losses[this.round] ?? {};
     const members = m.members;
     const lostCount = members.filter((u) => lost[u]).length;
@@ -158,16 +161,19 @@ export class OnlineRoomScreen implements Screen {
   private showPanel() {
     const { info, players } = this.room.state;
     const me = players[this.room.myId];
-    const list = Object.entries(players).sort((a, b) => a[1].joinedAt - b[1].joinedAt);
+    const list = Object.entries(players)
+      .filter(([, p]) => p && typeof p === 'object')
+      .sort((a, b) => Number(a[1].joinedAt) - Number(b[1].joinedAt));
     const finished = info.state === 'finished';
     const champ = finished ? info.members.find((u) => this.room.wins(u) >= info.firstTo) : undefined;
     const rows = list
       .map(([uid, p]) => `<div style="display:flex;justify-content:space-between;padding:6px 4px;border-bottom:1px solid #2a3570;opacity:${p.online ? 1 : 0.4}">
-          <span>${esc(p.name)}${uid === this.room.myId ? '（あなた）' : ''}${uid === info.hostId ? ' 👑' : ''}</span>
+          <span>${esc(nameOf(p))}${uid === this.room.myId ? '（あなた）' : ''}${uid === info.hostId ? ' 👑' : ''}</span>
           <span style="color:${p.ready ? '#7dff9a' : '#8890a8'}">${p.online ? (p.ready ? '準備OK' : 'まだ') : '切断'}</span></div>`)
       .join('');
     const html = `
-      <h2>${finished ? (champ ? `${esc(players[champ]?.name ?? '')} の勝ち！` : '試合終了') : '部屋で待っています'}</h2>
+      <h2>${this.room.hostGone ? 'ホストが部屋を出ました' : finished ? (champ ? `${esc(nameOf(players[champ]))} の勝ち！` : '試合終了') : '部屋で待っています'}</h2>
+      ${this.room.hostGone ? '<div class="err">ホストがいないと部屋を進められません。部屋を出て、新しく作り直してね</div>' : ''}
       <div style="text-align:center;font-size:18px">部屋コード</div>
       <div style="text-align:center;font-size:44px;letter-spacing:6px;color:#ffe14a">${this.room.id}</div>
       <div style="margin-top:8px">${rows}</div>
@@ -216,6 +222,10 @@ export class OnlineRoomScreen implements Screen {
       this.center.visible = true;
       this.center.text = startAt - now > 500 ? 'READY' : 'GO!';
       kb.endFrame();
+    } else if (this.roundOver || this.room.hostGone) {
+      // 決着後は自分の盤面を止める（待ち時間に窒息して勝ちが消えないように）
+      kb.endFrame();
+      for (const p of m.players) p.events = [];
     } else {
       if (this.center.visible && now - startAt > 400) this.center.visible = false;
       const input = kb.sample();

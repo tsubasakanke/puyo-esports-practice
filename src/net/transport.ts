@@ -12,6 +12,8 @@ export interface Transport {
   onChildAdded(path: string, cb: (v: any) => void): () => void;
   /** 切断されたら path に v を書く */
   onDisconnectSet(path: string, v: any): void;
+  /** 接続状態の変化を購読する（つながり直したときに online を戻すため）。登録した直後にも今の状態で呼ぶ */
+  onConnected(cb: (connected: boolean) => void): () => void;
 }
 
 const split = (p: string) => p.split('/').filter(Boolean);
@@ -69,9 +71,33 @@ export class MemoryHub {
     this.disconnects.set(uid, list);
   }
 
+  private offline = new Set<string>();
+  private connListeners = new Map<string, Set<(c: boolean) => void>>();
+
+  isConnected(uid: string) {
+    return !this.offline.has(uid);
+  }
+
+  onConnected(uid: string, cb: (c: boolean) => void) {
+    const set = this.connListeners.get(uid) ?? new Set();
+    set.add(cb);
+    this.connListeners.set(uid, set);
+    return () => set.delete(cb);
+  }
+
   /** uid の接続が切れたことにする（onDisconnectSet の内容を書く） */
   disconnect(uid: string) {
-    for (const [p, v] of this.disconnects.get(uid) ?? []) this.write(p, v);
+    this.offline.add(uid);
+    const list = this.disconnects.get(uid) ?? [];
+    this.disconnects.delete(uid);
+    for (const [p, v] of list) this.write(p, v);
+    for (const cb of this.connListeners.get(uid) ?? []) cb(false);
+  }
+
+  /** uid がつながり直したことにする */
+  reconnect(uid: string) {
+    this.offline.delete(uid);
+    for (const cb of this.connListeners.get(uid) ?? []) cb(true);
   }
 }
 
@@ -81,8 +107,10 @@ export class MemoryTransport implements Transport {
   serverNow() { return this.hub.now; }
   async get(path: string) { return this.hub.read(path); }
   async set(path: string, v: any) { this.hub.write(path, v); }
+  /** 本物の Firebase と同じく、まとめて 1 回で書く（途中の状態をほかの人に見せない） */
   async update(path: string, v: Record<string, any>) {
-    for (const [k, val] of Object.entries(v)) this.hub.write(`${path}/${k}`, val);
+    const cur = this.hub.read(path);
+    this.hub.write(path, { ...(cur && typeof cur === 'object' ? cur : {}), ...v });
   }
   async push(path: string, v: any) { this.hub.write(`${path}/${this.hub.nextKey()}`, v); }
   on(path: string, cb: (v: any) => void) {
@@ -106,4 +134,9 @@ export class MemoryTransport implements Transport {
     return off;
   }
   onDisconnectSet(path: string, v: any) { this.hub.addDisconnect(this.id, path, v); }
+  onConnected(cb: (c: boolean) => void) {
+    const off = this.hub.onConnected(this.id, cb);
+    cb(this.hub.isConnected(this.id));
+    return off;
+  }
 }

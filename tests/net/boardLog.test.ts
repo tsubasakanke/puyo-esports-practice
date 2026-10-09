@@ -31,3 +31,21 @@ it('300手ぶんでも 20000 文字未満', () => {
   }
   expect(w.toString().length).toBeLessThan(20000);
 });
+
+it('おじゃまが降らなかったターンは書かず、次の手の置き場所があれば 0 とみなす', () => {
+  const w = new BoardLogWriter(1);
+  w.lock(0, { x: 3, y: 1, dir: 0 }, 0);
+  w.garbage(0, [0, 0, 0, 0, 0, 0]);
+  expect(w.toString()).not.toContain('G0');
+  const r1 = parseBoardLog(w.toString());
+  expect(r1.garbage(0)).toBeUndefined(); // 次の手がまだないので待つ
+  w.lock(1, { x: 4, y: 1, dir: 0 }, 0);
+  expect(parseBoardLog(w.toString()).garbage(0)).toEqual([0, 0, 0, 0, 0, 0]);
+});
+
+it('負けた手のおじゃまなし（最後のターン）は書く', () => {
+  const w = new BoardLogWriter(1);
+  w.lock(0, { x: 3, y: 1, dir: 0 }, 0);
+  w.garbage(0, [0, 0, 0, 0, 0, 0], true);
+  expect(parseBoardLog(w.toString()).garbage(0)).toEqual([0, 0, 0, 0, 0, 0]);
+});

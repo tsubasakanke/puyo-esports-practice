@@ -34,5 +34,6 @@ export function createFirebaseTransport(config: Record<string, string>): Transpo
     onDisconnectSet: (path, v) => {
       void onDisconnect(ref(db, path)).set(v);
     },
+    onConnected: cb => onValue(ref(db, '.info/connected'), s => cb(s.val() === true)),
   };
 }

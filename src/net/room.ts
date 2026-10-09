@@ -6,6 +6,8 @@ export const MAX_PLAYERS = 4;
 export const ROOM_TTL_MS = 6 * 3600 * 1000;
 export const ROUND_END_DELAY_MS = 2500;
 export const COUNTDOWN_MS = 2000;
+/** 対戦中にこれだけ盤面ログが届かない人は負け（設計書 §8.4） */
+export const SILENT_LOSE_MS = 10_000;
 
 export interface RoomInfo {
   /** 前作 Puzzle Battle の部屋と区別する */
@@ -62,8 +64,13 @@ export function makeRoomId(): string {
 export class Room {
   state: RoomState;
   private cbs = new Set<() => void>();
-  private offs: (() => void)[] = [];
+  offs: (() => void)[] = [];
   private scheduledRound = -1;
+  private roundTimer: ReturnType<typeof setTimeout> | null = null;
+  private watchdog: ReturnType<typeof setInterval> | null = null;
+  /** uid ごとの、盤面ログが最後に変わったサーバー時刻 */
+  private lastBoard: Record<string, number> = {};
+  private left = false;
 
   private constructor(private t: Transport, readonly id: string, readonly myId: string, info: RoomInfo) {
     this.state = { info, players: {}, losses: {}, boards: {} };
@@ -75,6 +82,11 @@ export class Room {
 
   get isHost(): boolean {
     return this.state.info.hostId === this.myId;
+  }
+
+  /** ホストが抜けた（ホストしか部屋を進められないので、部屋は止まる） */
+  get hostGone(): boolean {
+    return !this.state.players[this.state.info.hostId]?.online;
   }
 
   serverNow(): number {
@@ -109,13 +121,13 @@ export class Room {
     if (t.serverNow() - info.createdAt > ROOM_TTL_MS) throw new Error('expired');
     const players: Record<string, PlayerInfo> = (await t.get(`rooms/${id}/players`)) ?? {};
     const existing = players[uid];
-    if (!existing && Object.keys(players).length >= MAX_PLAYERS) throw new Error('full');
+    const online = Object.values(players).filter((p) => p && p.online).length;
+    if (!existing && online >= MAX_PLAYERS) throw new Error('full');
     if (!existing && info.state === 'playing') throw new Error('playing');
 
     const base = `rooms/${id}`;
-    t.onDisconnectSet(`${base}/players/${uid}/online`, false);
     await t.set(`${base}/players/${uid}`, {
-      name: (name || existing?.name || 'プレイヤー').slice(0, 12),
+      name: String(name || existing?.name || 'プレイヤー').slice(0, 12),
       ready: false,
       online: true,
       joinedAt: existing?.joinedAt ?? t.serverNow(),
@@ -126,6 +138,14 @@ export class Room {
     }
     const room = new Room(t, id, uid, { ...info, members: info.members ?? [] });
     room.subscribe();
+    // つながるたびに「切断されたら offline」を仕掛け直し、online に戻す
+    room.offs.push(
+      t.onConnected((c) => {
+        if (!c || room.left) return;
+        t.onDisconnectSet(`${base}/players/${uid}/online`, false);
+        void t.set(`${base}/players/${uid}/online`, true);
+      }),
+    );
     return room;
   }
 
@@ -135,8 +155,26 @@ export class Room {
       this.t.on(`${b}/info`, (v) => v && this.changed({ info: { ...v, members: v.members ?? [] } })),
       this.t.on(`${b}/players`, (v) => this.changed({ players: v ?? {} })),
       this.t.on(`${b}/losses`, (v) => this.changed({ losses: v ?? {} })),
-      this.t.on(`${b}/boards`, (v) => this.changed({ boards: v ?? {} })),
+      this.t.on(`${b}/boards`, (v) => {
+        const boards: Record<string, string> = v ?? {};
+        for (const [uid, log] of Object.entries(boards)) if (log !== this.state.boards[uid]) this.lastBoard[uid] = this.t.serverNow();
+        this.changed({ boards });
+      }),
     );
+    this.watchdog = setInterval(() => this.checkSilent(), 1000);
+  }
+
+  /** ホスト: 対戦中に盤面ログが 10 秒以上届かない人を負けにする */
+  private checkSilent() {
+    const { info, losses } = this.state;
+    if (!this.isHost || info.state !== 'playing') return;
+    const now = this.t.serverNow();
+    const lost = losses[info.round] ?? {};
+    for (const uid of info.members) {
+      if (uid === this.myId || lost[uid]) continue;
+      const last = Math.max(this.lastBoard[uid] ?? 0, info.startAt);
+      if (now - last >= SILENT_LOSE_MS) void this.reportLose(info.round, uid);
+    }
   }
 
   private changed(part: Partial<RoomState>) {
@@ -151,26 +189,39 @@ export class Room {
   private hostLogic() {
     const { info, players, losses } = this.state;
     if (info.state !== 'playing') {
-      const list = Object.values(players).filter((p) => p.online);
+      const list = Object.values(players).filter((p) => p && p.online);
       if (list.length >= 2 && list.every((p) => p.ready)) void this.startRound(info.round);
       return;
     }
     const lost = losses[info.round] ?? {};
     // 対戦中に切断した人は負け
     for (const uid of info.members) {
-      if (!lost[uid] && players[uid] && !players[uid].online) void this.reportLose(info.round, uid);
+      if (!lost[uid] && !players[uid]?.online) void this.reportLose(info.round, uid);
     }
-    const lostCount = info.members.filter((u) => lost[u]).length;
-    if (lostCount >= info.members.length - 1 && this.scheduledRound !== info.round) {
+    if (this.roundDecided() && this.scheduledRound !== info.round) {
       this.scheduledRound = info.round;
       const round = info.round;
-      setTimeout(() => {
-        if (this.state.info.round !== round) return;
+      this.roundTimer = setTimeout(() => {
+        this.roundTimer = null;
+        if (this.state.info.round !== round || this.left || !this.roundDecided()) {
+          this.scheduledRound = -1;
+          return;
+        }
         const done = this.state.info.members.some((uid) => this.wins(uid) >= this.state.info.firstTo);
-        if (done) void this.t.update(`${this.base}/info`, { state: 'finished' });
+        // 相手が抜けて 1 人しか残っていないなら、そこで試合を終える
+        const remaining = this.state.info.members.filter((uid) => this.state.players[uid]?.online).length;
+        if (done || remaining < 2) void this.t.update(`${this.base}/info`, { state: 'finished' });
         else void this.startRound(this.state.info.baseRound);
       }, ROUND_END_DELAY_MS);
     }
+  }
+
+  /** 今のラウンドの決着がついたか（メンバー − 1 人以上が負け） */
+  roundDecided(): boolean {
+    const { info, losses } = this.state;
+    if (info.state !== 'playing' || info.members.length < 2) return false;
+    const lost = losses[info.round] ?? {};
+    return info.members.filter((u) => lost[u]).length >= info.members.length - 1;
   }
 
   private async startRound(baseRound: number) {
@@ -178,7 +229,7 @@ export class Room {
     const newMatch = info.state !== 'playing';
     const members = newMatch
       ? Object.entries(players)
-          .filter(([, p]) => p.online)
+          .filter(([, p]) => p && p.online)
           .sort((a, b) => a[1].joinedAt - b[1].joinedAt || (a[0] < b[0] ? -1 : 1))
           .slice(0, MAX_PLAYERS)
           .map(([uid]) => uid)
@@ -229,10 +280,9 @@ export class Room {
     return this.t.push(`${this.base}/attacks/${round}`, { from: this.myId, to: '*', ap: 0, c: 1 } satisfies AttackMessage);
   }
 
+  /** 戻り値で購読をやめる（呼んだ側が持つ） */
   onAttacks(round: number, cb: (m: AttackMessage) => void): () => void {
-    const off = this.t.onChildAdded(`${this.base}/attacks/${round}`, (v) => v && cb(v));
-    this.offs.push(off);
-    return off;
+    return this.t.onChildAdded(`${this.base}/attacks/${round}`, (v) => v && cb(v));
   }
 
   writeBoard(log: string): Promise<void> {
@@ -245,11 +295,16 @@ export class Room {
 
   /** 画面を離れるときに呼ぶ。ほかの人には切断と同じに見える */
   leave(): void {
-    void this.t.set(`${this.base}/players/${this.myId}/online`, false);
+    this.left = true;
+    // 自分の枠を消す（満員の数に入らないように）。対戦中ならホストが負けにする
+    void this.t.set(`${this.base}/players/${this.myId}`, null);
     this.dispose();
   }
 
   dispose(): void {
+    if (this.roundTimer) clearTimeout(this.roundTimer);
+    if (this.watchdog) clearInterval(this.watchdog);
+    this.roundTimer = this.watchdog = null;
     for (const off of this.offs) off();
     this.offs = [];
     this.cbs.clear();

@@ -91,6 +91,29 @@ describe('OnlineMatch', () => {
     expect(a.state.losses[1]?.A).toBe(true);
   });
 
+  it('すでに負けが記録されたラウンドでは自分は動かず、攻撃も送らない（リロードした人）', async () => {
+    const { a, ma, mb } = await setup();
+    await a.reportLose(1);
+    untilPieces(mb);
+    for (let i = 0; i < 300; i++) {
+      ma.step({ ...idle, down: true });
+      mb.step(idle);
+    }
+    expect(ma.me.tsumoIndex).toBe(0);
+    expect(ma.spectating).toBe(true);
+  });
+
+  it('負けた人から届いた攻撃は無視する', async () => {
+    const { a, b, ma, mb } = await setup();
+    untilPieces(ma, mb);
+    await a.reportLose(1);
+    await a.sendAttack(1, 'B', 9);
+    mb.step(idle);
+    expect(mb.me.pendingTotal()).toBe(0);
+    void ma;
+    void b;
+  });
+
   it('相手の予告の数が見える', async () => {
     const { ma, mb } = await setup();
     untilPieces(ma, mb);

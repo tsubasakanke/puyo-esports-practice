@@ -68,6 +68,11 @@ export class OnlineMatch {
     return this.replays[i]?.log.pending ?? 0;
   }
 
+  /** このラウンドの負けがもう記録されている（リロードした人など）。自分は動かさず観戦する */
+  get spectating(): boolean {
+    return !!this.room.state.losses[this.round]?.[this.room.myId] && this.me.phase !== 'dead';
+  }
+
   /** 部屋で負けたことになっている（切断など）か、盤面で負けたか */
   isOut(i: number): boolean {
     return this.players[i].phase === 'dead' || !!this.room.state.losses[this.round]?.[this.members[i]];
@@ -77,7 +82,8 @@ export class OnlineMatch {
     const from = this.members.indexOf(m.from);
     if (from < 0 || from === this.myIndex) return;
     if (m.c) this.me.confirm(from);
-    else if (m.to === this.room.myId && m.ap > 0) this.me.receive(from, m.ap);
+    // 負けた人（リロードして観戦中の人など）からの攻撃は受けない
+    else if (m.to === this.room.myId && m.ap > 0 && !this.isOut(from)) this.me.receive(from, Math.min(m.ap, 99999));
   }
 
   /** 攻撃先: 送った合計が一番少ない相手 → 盤面が一番低い相手 → 番号が小さい相手 */
@@ -99,14 +105,20 @@ export class OnlineMatch {
   step(input: FrameInput): void {
     this.frame++;
     const me = this.me;
+    const watching = this.spectating;
     me.rate = marginRate(me.rules.RATE, this.frame, me.rules);
     this.players.forEach((p, i) => {
       if (p.phase === 'dead') {
         p.events = [];
         return;
       }
+      if (i === this.myIndex && watching) {
+        p.events = [];
+        return;
+      }
       p.step(i === this.myIndex ? input : IDLE);
     });
+    if (watching) return;
     for (const e of me.events) {
       if (e.t === 'clear' && e.send > 0) {
         const t = this.target();

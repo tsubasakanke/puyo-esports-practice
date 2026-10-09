@@ -58,8 +58,8 @@ it('ログが途中までしかないと、そこで待って壊れない', () =
   w.garbage(0, [0, 0, 0, 0, 0, 0]);
   const p = new Player({ seed: 5, replay: parseBoardLog(w.toString()) });
   for (let i = 0; i < 2000; i++) p.step({ left: false, right: false, down: false, rotL: false, rotR: false });
-  expect(p.tsumoIndex).toBe(2);
-  expect(p.phase).toBe('control');
-  expect(p.piece).toMatchObject({ x: 3, y: 12 });
+  // おじゃまなしのターンは書かれないので、次の手（L1）が届くまでターンの終わりで待つ
+  expect(p.tsumoIndex).toBe(1);
+  expect(p.phase).toBe('garbage');
   expect(p.field.get(1, 1)).not.toBe(0);
 });

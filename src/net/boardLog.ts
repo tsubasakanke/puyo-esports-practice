@@ -19,8 +19,10 @@ export class BoardLogWriter {
     this.changed = true;
   }
 
-  garbage(i: number, cols: number[]): void {
+  /** おじゃまが降らなかったターンは書かない（次の手の L があれば 0 とみなす）。force なら 0 でも書く */
+  garbage(i: number, cols: number[], force = false): void {
     if (this.hasG.has(i)) return;
+    if (!force && cols.every((c) => c === 0)) return;
     this.hasG.add(i);
     this.tokens.push(`G${i}:${cols.map((c) => Math.min(9, c)).join('')}`);
     this.changed = true;
@@ -37,8 +39,7 @@ export class BoardLogWriter {
       const cur = p.tsumoIndex - 1;
       if (e.t === 'lock') this.lock(cur, e, e.soft);
       else if (e.t === 'garbage') this.garbage(cur, e.cols);
-      else if (e.t === 'spawn' && e.index > 0) this.garbage(e.index - 1, [0, 0, 0, 0, 0, 0]);
-      else if (e.t === 'dead' && cur >= 0) this.garbage(cur, [0, 0, 0, 0, 0, 0]);
+      else if (e.t === 'dead' && cur >= 0) this.garbage(cur, [0, 0, 0, 0, 0, 0], true);
     }
   }
 
@@ -84,6 +85,6 @@ export function parseBoardLog(s: string | null | undefined): ParsedBoardLog {
     round,
     pending,
     placement: (i) => placements.get(i),
-    garbage: (i) => garbage.get(i),
+    garbage: (i) => garbage.get(i) ?? (placements.has(i + 1) ? [0, 0, 0, 0, 0, 0] : undefined),
   };
 }

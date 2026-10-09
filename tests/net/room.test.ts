@@ -122,6 +122,54 @@ describe('Room', () => {
     expect(b.state.boards.A).toBe('R1|L0:3101,0');
   });
 
+  it('2人対戦で相手が抜けたら、残った人だけのラウンドを繰り返さずに試合を終える', async () => {
+    const [a, b] = await room(2, 3);
+    await readyAll([a, b]);
+    hub.disconnect('B');
+    await vi.advanceTimersByTimeAsync(ROUND_END_DELAY_MS * 4);
+    expect(a.state.info.state).toBe('finished');
+    expect(a.state.info.round).toBe(1);
+  });
+
+  it('切断から戻ったら online に戻る', async () => {
+    const [a, b] = await room(2);
+    hub.disconnect('B');
+    await vi.advanceTimersByTimeAsync(10);
+    expect(a.state.players.B.online).toBe(false);
+    hub.reconnect('B');
+    await vi.advanceTimersByTimeAsync(10);
+    expect(a.state.players.B.online).toBe(true);
+    void b;
+  });
+
+  it('抜けた人は満員の数に入らない', async () => {
+    const rs = await room(4);
+    rs[3].leave();
+    await vi.advanceTimersByTimeAsync(10);
+    const e = await Room.join(t('E'), rs[0].id, 'いー');
+    expect(e.state.info.app).toBe('puyo');
+  });
+
+  it('対戦中に 10 秒以上盤面ログが届かない人は負け（ホストが判定）', async () => {
+    const [a, b] = await room(2);
+    await readyAll([a, b]);
+    await a.writeBoard('R1|P0|');
+    for (let i = 0; i < 14; i++) {
+      hub.now += 1000;
+      if (i % 3 === 0) await a.writeBoard(`R1|P0|L${i}:3101,0`);
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    expect(a.state.losses[1]?.B).toBe(true);
+    expect(a.state.losses[1]?.A).toBeUndefined();
+  });
+
+  it('ホストが抜けたら hostGone になる', async () => {
+    const [a, b] = await room(2);
+    a.leave();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(b.hostGone).toBe(true);
+  });
+
   it('先取後にもう一度全員準備OKで、新しい試合（勝ち数 0 から）', async () => {
     const [a, b] = await room(2, 1);
     await readyAll([a, b]);
