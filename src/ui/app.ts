@@ -4,6 +4,8 @@ import { BASE_H, BASE_W, fitStage } from '../render/layout';
 import { loadSettings, saveSettings, type Settings } from '../settings';
 import { Sfx } from '../audio/sfx';
 import { PuyoTextures } from '../render/puyoTextures';
+import { GarbageIcons } from '../render/garbageIcons';
+import { workerThinker, type Thinker } from '../ai/cpuController';
 
 export interface Screen {
   /** 画面に入るとき。root に表示物を足す */
@@ -42,6 +44,19 @@ export class App {
   }
 
   private textureCache = new Map<string, PuyoTextures>();
+  private icons: GarbageIcons | null = null;
+  private thinker: Thinker | null = null;
+  /** CPU 対戦の前回の選択 */
+  cpuPrefs = { level: 3, firstTo: 2 };
+
+  garbageIcons(): GarbageIcons {
+    return (this.icons ??= new GarbageIcons(120));
+  }
+
+  /** CPU の思考（Web Worker）。1 つを使い回す */
+  cpuThinker(): Thinker {
+    return (this.thinker ??= workerThinker());
+  }
 
   /** ぷよのテクスチャは作り直さずに使い回す（画面を切り替えるたびに作るとメモリが増え続けるため） */
   textures(px: number, marks: boolean): PuyoTextures {

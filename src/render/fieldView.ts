@@ -100,7 +100,8 @@ export class FieldView extends Container {
   /** エンジンを 1 ステップ進めたあとに呼ぶ */
   update(p: Player): void {
     this.player = p;
-    this.frame = p.frame;
+    // 負けて止まったプレイヤーでもアニメが進むよう、エンジンのフレームではなく自前で数える
+    this.frame++;
     this.prevPiece = this.curPiece;
     this.prevFall = this.curFall;
     this.curPiece = p.piece ? { ...p.piece } : null;

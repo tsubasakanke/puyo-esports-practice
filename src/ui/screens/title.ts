@@ -7,6 +7,7 @@ import { FONT } from '../../render/hud';
 import type { Color } from '../../engine/types';
 import { SoloScreen } from './solo';
 import { SettingsScreen } from './settings';
+import { CpuSetupScreen } from './cpuSetup';
 
 export class TitleScreen implements Screen {
   private app!: App;
@@ -57,7 +58,7 @@ export class TitleScreen implements Screen {
 
     this.menu = new Menu([
       { label: 'ひとり練習', onSelect: () => app.go(new SoloScreen()) },
-      { label: 'CPU 対戦（じゅんび中）', disabled: true },
+      { label: 'CPU 対戦', onSelect: () => app.go(new CpuSetupScreen()) },
       { label: 'オンライン対戦（じゅんび中）', disabled: true },
       { label: '設定', onSelect: () => app.go(new SettingsScreen()) },
     ]);

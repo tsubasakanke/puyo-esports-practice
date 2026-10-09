@@ -7,6 +7,8 @@ export interface MatchOptions {
   seed: number;
   colors?: 3 | 4 | 5;
   rules?: Partial<Rules>;
+  /** プレイヤーごとのルール（DAS・ARR など。省略した人は rules） */
+  playerRules?: (Partial<Rules> | undefined)[];
 }
 
 export interface MatchResult {
@@ -23,7 +25,7 @@ export class Match {
   constructor(opts: MatchOptions) {
     this.players = Array.from(
       { length: opts.players },
-      (_, i) => new Player({ seed: opts.seed, colors: opts.colors, rules: opts.rules, garbageSeed: ((opts.seed + 1) * 0x9e37 * (i + 1)) >>> 0 }),
+      (_, i) => new Player({ seed: opts.seed, colors: opts.colors, rules: { ...opts.rules, ...opts.playerRules?.[i] }, garbageSeed: ((opts.seed + 1) * 0x9e37 * (i + 1)) >>> 0 }),
     );
   }
 
