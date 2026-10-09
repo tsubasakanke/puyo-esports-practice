@@ -1,6 +1,8 @@
 import { Application } from 'pixi.js';
 import { PuyoTextures } from './render/puyoTextures';
 import { debugPuyoScene } from './render/debugPuyo';
+import { GarbageIcons } from './render/garbageIcons';
+import { GarbageQueueView } from './render/garbageQueue';
 import { App } from './ui/app';
 import { TitleScreen } from './ui/screens/title';
 
@@ -22,6 +24,16 @@ async function main() {
   }
   if (new URLSearchParams(location.search).get('debug') === 'puyo') {
     pixi.stage.addChild(debugPuyoScene(new PuyoTextures(128), 64));
+    return;
+  }
+  if (new URLSearchParams(location.search).get('debug') === 'garbage') {
+    const icons = new GarbageIcons(120);
+    [1, 7, 37, 200, 2165, 99999].forEach((n, i) => {
+      const q = new GarbageQueueView(icons, 60);
+      q.set(n);
+      q.position.set(20, 20 + i * 80);
+      pixi.stage.addChild(q);
+    });
     return;
   }
   const app = new App(pixi);

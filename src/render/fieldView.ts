@@ -114,6 +114,7 @@ export class FieldView extends Container {
     this.squashAt.clear();
     this.deathStart = -1;
     this.clearStart = -100;
+    this.shakeStart = -100;
     this.prevPiece = this.curPiece = null;
     this.board.y = 0;
     this.board.rotation = 0;
@@ -149,6 +150,19 @@ export class FieldView extends Container {
         const [sx, sy] = e.groups[0].cells.reduce(([ax, ay], [x, y]) => [ax + x, ay + y], [0, 0]);
         const n = e.groups[0].cells.length;
         this.popup(e.chain, this.px(sx / n), this.py(sy / n));
+        break;
+      }
+      case 'garbage': {
+        // 列ごとに着地の速さが違う（実測の表）
+        for (const d of e.drops) {
+          const land = (p.rules.GARBAGE_LAND_FRAMES[d.x - 1] ?? 60) * 0.8;
+          this.anims.set(this.key(d.x, d.to), { fromRows: d.from - d.to, start: this.frame, land, delay: 0 });
+          this.squashAt.delete(this.key(d.x, d.to));
+        }
+        if (e.count >= 6) {
+          this.shakeStart = this.frame + 40;
+          this.shakeAmp = Math.min(1, e.count / 30) * this.cell * 0.18;
+        }
         break;
       }
       case 'dead':
@@ -304,17 +318,23 @@ export class FieldView extends Container {
     this.renderFx(now);
 
     // 負け: 盤面が崩れ落ちる
+    // おじゃまが着地したときの揺れ
+    const st = now - this.shakeStart;
+    const shake = st >= 0 && st < 20 ? Math.sin(st * 1.9) * this.shakeAmp * (1 - st / 20) : 0;
+    this.pieceLayer.y = this.fx.y = shake;
     if (this.deathStart >= 0) {
       const t = Math.min(1, (now - this.deathStart) / DEATH_FRAMES);
       this.board.y = t * t * cell * 16;
       this.board.alpha = 1 - t * 0.6;
     } else {
-      this.board.y = 0;
+      this.board.y = shake;
       this.board.alpha = 1;
     }
   }
 
   private burstDone = false;
+  private shakeStart = -100;
+  private shakeAmp = 0;
 
   private renderPiece(now: number, alpha: number) {
     const cur = this.curPiece;
