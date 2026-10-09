@@ -1,6 +1,6 @@
 import { Field, applyGravity, clearGroups, findGroups, type Drop, type Group } from './field';
 import { TSU, type Rules } from './rules/tsu';
-import { childPos, tryDrop, tryMove, tryRotate, type PieceState } from './piece';
+import { childPos, tryDrop, tryMove, tryRotate, type Dir, type PieceState } from './piece';
 import { Lcg, TsumoQueue } from './rng';
 import { dropColumns, garbageFallFrames } from './garbage';
 import { chainStepScore } from './score';
@@ -48,9 +48,18 @@ interface State {
   garbageReady: number;
   garbageWaiting: Record<number, number>;
   garbageRng: number;
+  replayWaiting: boolean;
 }
 
 export type PlayerSnapshot = State;
+
+/** オンラインの相手の盤面を再生するときの、置き場所とおじゃまのログ */
+export interface ReplaySource {
+  /** i 手目の置き場所（まだ届いていなければ undefined） */
+  placement(i: number): { x: number; y: number; dir: Dir; soft: number } | undefined;
+  /** i 手目のターンの終わりに降ったおじゃまの列（まだ届いていなければ undefined） */
+  garbage(i: number): number[] | undefined;
+}
 
 export interface PlayerOptions {
   seed: number;
@@ -58,6 +67,8 @@ export interface PlayerOptions {
   garbageSeed?: number;
   colors?: 3 | 4 | 5;
   rules?: Partial<Rules>;
+  /** 再生モード。入力の代わりにログどおりに置き、おじゃまもログどおりに降らせる */
+  replay?: ReplaySource;
 }
 
 /** 1人分のゲーム。step(input) で 1/60 秒進む。描画・通信には依存しない */
@@ -91,6 +102,10 @@ export class Player {
   /** 未確定の予告（送り主ごと。送り主の連鎖が終わると確定する） */
   private garbageWaiting: Record<number, number> = {};
   private garbageRng: Lcg;
+  /** 再生モードのログ */
+  replay: ReplaySource | null;
+  /** 再生モードで、ターンの終わりのおじゃまのログを待っている */
+  private replayWaiting = false;
 
   private fallCounter = 0;
   private lockTimer = 0;
@@ -109,6 +124,7 @@ export class Player {
     this.tsumo = new TsumoQueue(opts.seed, opts.colors ?? 4);
     this.timer = this.rules.FIRST_SPAWN_EXTRA;
     this.rate = this.rules.RATE;
+    this.replay = opts.replay ?? null;
     this.garbageRng = new Lcg(opts.garbageSeed ?? (opts.seed * 0x9e37 + 0x1234) >>> 0);
   }
 
@@ -168,7 +184,10 @@ export class Player {
     this.frame++;
     switch (this.phase) {
       case 'spawnWait':
+        if (--this.timer <= 0) this.spawn();
+        break;
       case 'garbage':
+        if (this.replayWaiting && !this.applyReplayGarbage()) break;
         if (--this.timer <= 0) this.spawn();
         break;
       case 'control':
@@ -218,6 +237,17 @@ export class Player {
   private control(input: FrameInput) {
     const r = this.rules;
     let p = this.piece!;
+
+    if (this.replay) {
+      // 再生モード: ログの置き場所が届いたら、そこに置いて固定する
+      const rec = this.replay.placement(this.tsumoIndex - 1);
+      if (!rec) return;
+      this.piece = { ...p, x: rec.x, y: rec.y, dir: rec.dir };
+      this.score += rec.soft;
+      this.softDropScore = rec.soft;
+      this.lock();
+      return;
+    }
 
     // 回転（1 フレームに 1 回まで。両方押したら右回転を優先）
     const turn = input.rotR ? 1 : input.rotL ? -1 : 0;
@@ -294,7 +324,7 @@ export class Player {
       }
     }
     this.piece = null;
-    this.emit({ t: 'lock', cells });
+    this.emit({ t: 'lock', cells, x: p.x, y: p.y, dir: p.dir, soft: this.softDropScore });
     const { maxDrop, drops } = applyGravity(this.field);
     if (maxDrop > 0) {
       this.emit({ t: 'chigiri', drops, maxDrop });
@@ -321,16 +351,30 @@ export class Player {
     }
     this.phase = 'garbage';
     this.timer = this.rules.NEXT_DELAY;
-    if (this.garbageReady > 0) this.dropGarbage();
+    if (this.replay) {
+      this.replayWaiting = true;
+      if (!this.applyReplayGarbage()) return;
+    } else if (this.garbageReady > 0) {
+      const n = Math.min(this.garbageReady, this.rules.MAX_GARBAGE_DROP);
+      this.garbageReady -= n;
+      this.dropGarbage(dropColumns(n, this.garbageRng));
+    }
     if (this.timer <= 0) this.spawn();
   }
 
-  /** 確定した予告を最大 30 個降らせる */
-  private dropGarbage() {
+  /** 再生モード: このターンのおじゃまのログが届いていれば降らせる。届いていなければ false */
+  private applyReplayGarbage(): boolean {
+    const cols = this.replay!.garbage(this.tsumoIndex - 1);
+    if (!cols) return false;
+    this.replayWaiting = false;
+    if (cols.some((c) => c > 0)) this.dropGarbage(cols);
+    return true;
+  }
+
+  /** 各列に cols 個ずつおじゃまを降らせる */
+  private dropGarbage(cols: number[]) {
     const r = this.rules;
-    const n = Math.min(this.garbageReady, r.MAX_GARBAGE_DROP);
-    this.garbageReady -= n;
-    const cols = dropColumns(n, this.garbageRng);
+    const n = cols.reduce((a, b) => a + b, 0);
     const heights = cols.map((_, i) => this.field.height(i + 1));
     const drops: Drop[] = [];
     cols.forEach((k, i) => {
@@ -343,7 +387,7 @@ export class Player {
         drops.push({ x, from: 14 + j + 1, to: y });
       }
     });
-    this.emit({ t: 'garbage', count: n, drops });
+    this.emit({ t: 'garbage', count: n, drops, cols: [...cols] });
     const fall = garbageFallFrames(cols, heights, r.GARBAGE_LAND_FRAMES, r.GARBAGE_LAND_PER_ROW);
     this.timer = Math.max(this.timer, fall);
   }
@@ -418,6 +462,7 @@ export class Player {
       garbageReady: this.garbageReady,
       garbageWaiting: this.garbageWaiting,
       garbageRng: this.garbageRng.state,
+      replayWaiting: this.replayWaiting,
       pendingGroups: this.pendingGroups,
     } as State & { pendingGroups: Group[] });
   }
@@ -451,6 +496,7 @@ export class Player {
     this.garbageReady = c.garbageReady;
     this.garbageWaiting = c.garbageWaiting;
     this.garbageRng = new Lcg(c.garbageRng);
+    this.replayWaiting = c.replayWaiting ?? false;
     this.events = [];
   }
 }
