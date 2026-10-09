@@ -33,7 +33,26 @@ function bodyPath(ctx: CanvasRenderingContext2D, px: number, links: number, inse
   if (links & LINK_RIGHT) ctx.rect(c, c - band, c + 1, band * 2);
 }
 
-function drawPuyo(px: number, color: Color, links: number): HTMLCanvasElement {
+/** 色の見分け用マーク（設定でオン） */
+function drawMark(ctx: CanvasRenderingContext2D, px: number, color: Color) {
+  const c = px / 2, y = c + px * 0.27, r = px * 0.07;
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.beginPath();
+  if (color === 1) ctx.arc(c, y, r, 0, Math.PI * 2);
+  else if (color === 2) ctx.moveTo(c, y - r), ctx.lineTo(c + r, y + r * 0.8), ctx.lineTo(c - r, y + r * 0.8);
+  else if (color === 3) ctx.rect(c - r * 0.85, y - r * 0.85, r * 1.7, r * 1.7);
+  else if (color === 4) ctx.moveTo(c, y - r), ctx.lineTo(c + r, y), ctx.lineTo(c, y + r), ctx.lineTo(c - r, y);
+  else if (color === 5) {
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r * 1.1;
+      ctx.lineTo(c + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawPuyo(px: number, color: Color, links: number, marks = false): HTMLCanvasElement {
   const [cv, ctx] = canvas(px);
   const [base, light, dark] = PUYO_COLORS[color];
   const c = px / 2;
@@ -82,6 +101,8 @@ function drawPuyo(px: number, color: Color, links: number): HTMLCanvasElement {
   ctx.arc(c - px * 0.27, c - px * 0.06, px * 0.03, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+
+  if (marks && !garbage) drawMark(ctx, px, color);
 
   if (garbage) {
     // おじゃまは半透明っぽく、中心に小さい模様
@@ -134,10 +155,10 @@ export class PuyoTextures {
   private bodies = new Map<number, Texture>();
   private eyeTex = new Map<number, Texture>();
 
-  constructor(readonly px: number) {
+  constructor(readonly px: number, readonly marks = false) {
     for (const color of [1, 2, 3, 4, 5, 6] as Color[]) {
       for (let links = 0; links < 16; links++) {
-        this.bodies.set(color * 16 + links, Texture.from(drawPuyo(px, color, color === 6 ? 0 : links)));
+        this.bodies.set(color * 16 + links, Texture.from(drawPuyo(px, color, color === 6 ? 0 : links, marks)));
       }
       this.eyeTex.set(color * 2, Texture.from(drawEyes(px, color, false)));
       this.eyeTex.set(color * 2 + 1, Texture.from(drawEyes(px, color, true)));
